@@ -18,7 +18,12 @@ class RenderEngine;
 class GradientCanvasPlugin : public QObject, public OpenRGBPluginInterface
 {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID OpenRGBPluginInterface_IID)
+    /*-----------------------------------------------------*\
+    | OpenRGB 1.0 reads Id / Name / OpenRGBPluginAPIVersion |
+    | from this JSON before loading - without it the plugin |
+    | is skipped ("does not have a MetaData field")         |
+    \*-----------------------------------------------------*/
+    Q_PLUGIN_METADATA(IID OpenRGBPluginInterface_IID FILE "GradientCanvasPlugin.json")
     Q_INTERFACES(OpenRGBPluginInterface)
 
 public:

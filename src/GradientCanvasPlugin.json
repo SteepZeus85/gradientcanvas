@@ -1,0 +1,8 @@
+{
+    "Id":                       "org.gradientcanvas.GradientCanvasPlugin",
+    "Name":                     "Gradient Canvas",
+    "VersionStr":               "1.0.1",
+    "Commit":                   "",
+    "Url":                      "",
+    "OpenRGBPluginAPIVersion":  5
+}
