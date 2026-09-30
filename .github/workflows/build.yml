@@ -1,0 +1,79 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      openrgb_ref:
+        description: "OpenRGB branch/tag/commit to build against (match your OpenRGB build)"
+        required: false
+        default: "master"
+
+env:
+  OPENRGB_REF: ${{ github.event.inputs.openrgb_ref || 'master' }}
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch OpenRGB headers
+        shell: bash
+        run: |
+          if [ ! -f OpenRGB/OpenRGBPluginInterface.h ]; then
+            rm -rf OpenRGB
+            git clone https://gitlab.com/CalcProgrammer1/OpenRGB.git OpenRGB
+            git -C OpenRGB checkout "$OPENRGB_REF"
+          fi
+
+      # Official OpenRGB 1.0 Windows builds use Qt 6.8.3 + MSVC 2022 64-bit.
+      # A plugin must be built with the same Qt major/minor and compiler.
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          arch: win64_msvc2022_64
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build
+        shell: cmd
+        run: |
+          mkdir build
+          cd build
+          qmake ..\GradientCanvasPlugin.pro CONFIG+=release
+          nmake
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GradientCanvasPlugin-Windows-x64
+          path: build/**/GradientCanvasPlugin.dll
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch OpenRGB headers
+        run: |
+          if [ ! -f OpenRGB/OpenRGBPluginInterface.h ]; then
+            rm -rf OpenRGB
+            git clone https://gitlab.com/CalcProgrammer1/OpenRGB.git OpenRGB
+            git -C OpenRGB checkout "$OPENRGB_REF"
+          fi
+
+      - name: Install Qt
+        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev qmake6
+
+      - name: Build
+        run: |
+          mkdir build && cd build
+          qmake6 ../GradientCanvasPlugin.pro
+          make -j$(nproc)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GradientCanvasPlugin-Linux-x64
+          path: build/libGradientCanvasPlugin.so
