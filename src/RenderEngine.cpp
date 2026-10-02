@@ -101,10 +101,81 @@ bool RenderEngine::BindDevices(const std::function<std::vector<RGBControllerInte
         return false;
     }
     generation++;
-    layout.Sync(get_controllers());
+    std::vector<RGBControllerInterface*> list = get_controllers();
+    layout.Sync(list);
+
+    /*-----------------------------------------------------*\
+    | Hook update callbacks for flow control. Controllers   |
+    | that left the list may already be freed, so they are  |
+    | only forgotten, never touched.                        |
+    \*-----------------------------------------------------*/
+    std::set<RGBControllerInterface*> now_hooked;
+    for(RGBControllerInterface* c : list)
+    {
+        if(!c) continue;
+        FlowState* fs = FlowFor(c);
+        if(!hooked.count(c))
+        {
+            c->UnregisterUpdateCallback(fs);        /* never twice */
+            c->RegisterUpdateCallback(&RenderEngine::OnControllerUpdate, fs);
+        }
+        fs->pending = 0;
+        now_hooked.insert(c);
+    }
+    hooked.swap(now_hooked);
+
     devices_valid = true;
     reset_modes   = true;
     return true;
+}
+
+void RenderEngine::UnhookDevices(const std::vector<RGBControllerInterface*>& alive)
+{
+    std::lock_guard<std::mutex> lock(bind_mutex);
+    for(RGBControllerInterface* c : alive)
+    {
+        if(c && hooked.count(c))
+        {
+            c->UnregisterUpdateCallback(FlowFor(c));
+        }
+    }
+    hooked.clear();
+}
+
+RenderEngine::FlowState* RenderEngine::FlowFor(RGBControllerInterface* c)
+{
+    FlowState*& fs = flow[c];
+    if(!fs)
+    {
+        fs = new FlowState();       /* intentionally never freed, see header */
+    }
+    return fs;
+}
+
+void RenderEngine::OnControllerUpdate(void* arg, unsigned int reason, void*)
+{
+    FlowState* fs = (FlowState*)arg;
+
+    if(reason != RGBCONTROLLER_UPDATE_REASON_UPDATELEDS)
+    {
+        return;
+    }
+
+    /*-----------------------------------------------------*\
+    | OpenRGB also signals locally, synchronously, inside   |
+    | our own UpdateLEDs() call - that isn't the device     |
+    | catching up, so ignore it                             |
+    \*-----------------------------------------------------*/
+    if(fs->in_call && fs->caller.load() == std::this_thread::get_id())
+    {
+        return;
+    }
+
+    fs->seen_echo = true;
+    int p = fs->pending.load();
+    while(p > 0 && !fs->pending.compare_exchange_weak(p, p - 1))
+    {
+    }
 }
 
 /*---------------------------------------------------------*\
@@ -177,7 +248,7 @@ void RenderEngine::RenderFrame()
         OutZone* out = nullptr;
         if(frame && bound[zi])
         {
-            frame->zones.push_back({bound[zi], z.start_index, std::vector<RGBColor>(z.led_count)});
+            frame->zones.push_back({bound[zi], z.start_index, std::vector<RGBColor>(z.led_count), FlowFor(bound[zi])});
             out = &frame->zones.back();
         }
 
@@ -342,6 +413,28 @@ void RenderEngine::WriteFrame(OutFrame& frame)
         }
 
         /*-------------------------------------------------*\
+        | Flow control: hold this device's frame while the  |
+        | service still has MAX_IN_FLIGHT of ours queued.   |
+        | Only once the device has echoed at least once, so |
+        | devices without a service (or an older one that   |
+        | doesn't echo) are never held back.                |
+        \*-------------------------------------------------*/
+        FlowState* fs  = entry.second.front()->flow;
+        auto       now = std::chrono::steady_clock::now();
+        if(fs && fs->seen_echo)
+        {
+            if(fs->pending.load() >= MAX_IN_FLIGHT)
+            {
+                if(now - fs->last_send < std::chrono::milliseconds(750))
+                {
+                    dropped_frames++;
+                    continue;
+                }
+                fs->pending = 0;    /* echo lost - don't stall forever */
+            }
+        }
+
+        /*-------------------------------------------------*\
         | Write straight into the colour buffer: SetColor() |
         | takes an exclusive lock per LED, and every one of |
         | those waits for any hardware write in progress.   |
@@ -375,7 +468,19 @@ void RenderEngine::WriteFrame(OutFrame& frame)
         | Asynchronous in OpenRGB 1.0 - flags the device's  |
         | own update thread                                 |
         \*-------------------------------------------------*/
+        if(fs)
+        {
+            fs->pending++;
+            fs->sends++;
+            fs->last_send = now;
+            fs->caller    = std::this_thread::get_id();
+            fs->in_call   = true;
+        }
         c->UpdateLEDs();
+        if(fs)
+        {
+            fs->in_call   = false;
+        }
     }
 
     last_output_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();

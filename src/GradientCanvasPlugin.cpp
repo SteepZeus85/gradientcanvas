@@ -183,6 +183,10 @@ void GradientCanvasPlugin::Unload()
     {
         SaveSettings();             /* save first so the play state survives a restart */
         engine->SetPlaying(false);
+        if(api)
+        {
+            engine->UnhookDevices(api->GetRGBControllers());
+        }
     }
 
     if(guard)
@@ -313,6 +317,10 @@ void GradientCanvasPlugin::ResourceManagerUpdated(unsigned int update_reason)
         | pointer synchronously (we're on OpenRGB's thread) |
         \*-------------------------------------------------*/
         case RESOURCEMANAGER_UPDATE_REASON_DETECTION_STARTED:
+            if(api)
+            {
+                engine->UnhookDevices(api->GetRGBControllers());
+            }
             engine->ReleaseDevices();
             break;
 

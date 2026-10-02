@@ -24,6 +24,7 @@
 #include <QElapsedTimer>
 #include <QColor>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <map>
@@ -74,6 +75,13 @@ public:
     void            ReleaseDevices();
     void            DeviceListReady();
     bool            BindDevices(const std::function<std::vector<RGBControllerInterface*>()>& get_controllers);
+
+    /*-----------------------------------------------------*\
+    | Remove our update callbacks from controllers that are |
+    | still alive (call before a rescan frees them, and on  |
+    | unload). Pass the current controller list.            |
+    \*-----------------------------------------------------*/
+    void            UnhookDevices(const std::vector<RGBControllerInterface*>& alive);
 
     /*-----------------------------------------------------*\
     | Render a single frame immediately (used to refresh    |
@@ -136,11 +144,40 @@ private:
     /*-----------------------------------------------------*\
     | A frame handed to the output thread                   |
     \*-----------------------------------------------------*/
+    /*-----------------------------------------------------*\
+    | Flow control per device.                              |
+    |                                                       |
+    |   With OpenRGB 1.0's background service, UpdateLEDs() |
+    |   only queues a network packet and returns at once.   |
+    |   The service keeps an UNLIMITED queue per device and |
+    |   drains it at hardware speed, so sending faster than |
+    |   a slow device (SMBus RAM, mainboard) can take makes |
+    |   the queue grow forever: the lights fall further and |
+    |   further behind and the animation crawls.            |
+    |                                                       |
+    |   The service echoes every applied frame back to its  |
+    |   clients, so we count frames in flight and only send |
+    |   the next one when the device has caught up.         |
+    \*-----------------------------------------------------*/
+    struct FlowState
+    {
+        std::atomic<int>                pending     {0};    /* sent, not yet echoed */
+        std::atomic<bool>               seen_echo   {false};
+        std::atomic<bool>               in_call     {false};/* inside our UpdateLEDs() */
+        std::atomic<std::thread::id>    caller;
+        unsigned int                    sends       = 0;    /* output thread only */
+        std::chrono::steady_clock::time_point last_send{};  /* output thread only */
+    };
+    static constexpr int MAX_IN_FLIGHT = 2;
+    static void     OnControllerUpdate(void* arg, unsigned int reason, void* controller);
+    FlowState*      FlowFor(RGBControllerInterface* c);     /* bind_mutex held */
+
     struct OutZone
     {
         RGBControllerInterface* controller;
         unsigned int            start;
         std::vector<RGBColor>   colors;
+        FlowState*              flow;
     };
     struct OutFrame
     {
@@ -184,6 +221,13 @@ private:
     std::atomic<bool>                   reset_modes     {true};
     std::atomic<double>                 last_output_ms  {0.0};
     std::atomic<unsigned int>           dropped_frames  {0};
+
+    /*-----------------------------------------------------*\
+    | FlowStates are never freed: OpenRGB may still be      |
+    | running a copied callback list after we unregister.  |
+    \*-----------------------------------------------------*/
+    std::map<RGBControllerInterface*, FlowState*> flow;     /* bind_mutex */
+    std::set<RGBControllerInterface*>   hooked;             /* bind_mutex */
 
     std::atomic<bool>                   suspended       {false};
     std::atomic<bool>                   standby         {false};
