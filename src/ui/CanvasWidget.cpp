@@ -8,6 +8,8 @@
 #include "GradientEditor.h"
 #include "LayoutCanvas.h"
 #include "RenderEngine.h"
+#include "ParamSlider.h"
+#include "CalibrationDialog.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -17,6 +19,8 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QLabel>
 #include <QPushButton>
 #include <QRandomGenerator>
@@ -32,90 +36,18 @@
 #include <cmath>
 #include <map>
 
-/*=========================================================*\
-| ParamSlider - slider + spin box bound to a double         |
-\*=========================================================*/
-class ParamSlider : public QWidget
-{
-public:
-    ParamSlider(double min, double max, int decimals, const QString& suffix = QString(), QWidget* parent = nullptr)
-        : QWidget(parent)
-    {
-        slider = new QSlider(Qt::Horizontal, this);
-        slider->setRange(0, 1000);
-        spin   = new QDoubleSpinBox(this);
-        spin->setDecimals(decimals);
-        spin->setSuffix(suffix);
-        spin->setFixedWidth(78);
-        SetRange(min, max, decimals);
 
-        QHBoxLayout* l = new QHBoxLayout(this);
-        l->setContentsMargins(0, 0, 0, 0);
-        l->addWidget(slider, 1);
-        l->addWidget(spin);
-
-        connect(slider, &QSlider::valueChanged, this, [this](int v)
-        {
-            if(guard) return;
-            double d = lo + (hi - lo) * v / 1000.0;
-            guard = true;
-            spin->setValue(d);
-            guard = false;
-            if(on_change) on_change(spin->value());
-        });
-        connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double d)
-        {
-            if(guard) return;
-            guard = true;
-            slider->setValue(ToSlider(d));
-            guard = false;
-            if(on_change) on_change(d);
-        });
-    }
-
-    void SetRange(double min, double max, int decimals)
-    {
-        lo = min;
-        hi = max;
-        guard = true;
-        spin->setDecimals(decimals);
-        spin->setRange(min, max);
-        spin->setSingleStep(std::pow(10.0, -decimals) * (decimals > 0 ? 5 : 1));
-        guard = false;
-    }
-
-    void SetValue(double d)
-    {
-        guard = true;
-        spin->setValue(d);
-        slider->setValue(ToSlider(d));
-        guard = false;
-    }
-
-    std::function<void(double)> on_change;
-
-private:
-    int ToSlider(double d) const
-    {
-        return (hi > lo) ? (int)std::lround((d - lo) / (hi - lo) * 1000.0) : 0;
-    }
-
-    QSlider*        slider;
-    QDoubleSpinBox* spin;
-    double          lo = 0, hi = 1;
-    bool            guard = false;
-};
 
 /*=========================================================*\
 | CanvasWidget                                              |
 \*=========================================================*/
-CanvasWidget::CanvasWidget(RenderEngine* engine_ptr, std::function<void()> save_cb, QWidget* parent)
-    : QWidget(parent), engine(engine_ptr), save_callback(std::move(save_cb))
+CanvasWidget::CanvasWidget(RenderEngine* engine_ptr, CanvasHooks hooks_in, QWidget* parent)
+    : QWidget(parent), engine(engine_ptr), hooks(std::move(hooks_in))
 {
     save_timer = new QTimer(this);
     save_timer->setSingleShot(true);
     save_timer->setInterval(800);
-    connect(save_timer, &QTimer::timeout, this, [this]() { if(save_callback) save_callback(); });
+    connect(save_timer, &QTimer::timeout, this, [this]() { if(hooks.save) hooks.save(); });
 
     canvas = new LayoutCanvas(engine, this);
 
@@ -336,6 +268,23 @@ QWidget* CanvasWidget::BuildToolbar()
     canvas_w_spin->setToolTip(tr("Canvas width"));
     canvas_h_spin->setToolTip(tr("Canvas height"));
 
+    QPushButton* calibrate = new QPushButton(tr("Calibrate colours…"), bar);
+    calibrate->setToolTip(tr("Match colours between devices that show the same value differently"));
+    connect(calibrate, &QPushButton::clicked, this, [this]()
+    {
+        if(!calibration_dialog)
+        {
+            calibration_dialog = new CalibrationDialog(engine, [this]()
+            {
+                canvas->RefreshFrame();
+                ScheduleSave();
+            }, this);
+        }
+        calibration_dialog->show();
+        calibration_dialog->raise();
+        calibration_dialog->activateWindow();
+    });
+
     QPushButton* fit = new QPushButton(tr("Fit"), bar);
     fit->setToolTip(tr("Fit canvas to view (Ctrl + wheel zooms)"));
 
@@ -343,6 +292,8 @@ QWidget* CanvasWidget::BuildToolbar()
     l->addWidget(output_check);
     l->addWidget(fps_spin);
     l->addWidget(fps_label);
+    l->addSpacing(12);
+    l->addWidget(calibrate);
     l->addSpacing(12);
     l->addWidget(led_edit_button);
     l->addWidget(snap_check);
@@ -407,6 +358,7 @@ QWidget* CanvasWidget::BuildEffectPanel()
     scroll->setWidgetResizable(true);
     scroll->setMinimumWidth(290);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     QWidget* panel = new QWidget(scroll);
     QVBoxLayout* l = new QVBoxLayout(panel);
@@ -547,6 +499,84 @@ QWidget* CanvasWidget::BuildEffectPanel()
     });
 
     l->addWidget(gg);
+
+    /*-----------------------------------------------------*\
+    | Profiles                                              |
+    \*-----------------------------------------------------*/
+    QGroupBox*   pg = new QGroupBox(tr("Profiles"), panel);
+    QVBoxLayout* pl = new QVBoxLayout(pg);
+
+    profile_combo = new QComboBox(pg);
+    profile_combo->setToolTip(tr("OpenRGB profiles"));
+
+    QPushButton* save_profile = new QPushButton(tr("Save to profile"), pg);
+    QPushButton* new_profile  = new QPushButton(tr("New…"), pg);
+    QPushButton* load_profile = new QPushButton(tr("Load"), pg);
+    save_profile->setToolTip(tr("Store the current effect, gradient and play state in this profile.\n"
+                                "The profile's device colours and other plugins are kept.\n"
+                                "The layout map is shared by all profiles."));
+
+    QHBoxLayout* pb = new QHBoxLayout();
+    pb->addWidget(load_profile);
+    pb->addWidget(save_profile);
+    pb->addWidget(new_profile);
+
+    status_label = new QLabel(pg);
+    status_label->setWordWrap(true);
+    status_label->setStyleSheet("color: gray;");
+
+    QLabel* phelp = new QLabel(tr("<small>Your setup is saved automatically. Profiles remember the effect, gradient and "
+                                  "whether it's playing. Loading a profile without Gradient Canvas settings pauses the "
+                                  "animation so the profile's own colours show.</small>"), pg);
+    phelp->setWordWrap(true);
+
+    pl->addWidget(profile_combo);
+    pl->addLayout(pb);
+    pl->addWidget(status_label);
+    pl->addWidget(phelp);
+
+    status_timer = new QTimer(this);
+    status_timer->setSingleShot(true);
+    status_timer->setInterval(8000);
+    connect(status_timer, &QTimer::timeout, status_label, &QLabel::clear);
+
+    auto do_save = [this](const std::string& name)
+    {
+        if(!hooks.save_to_profile) return;
+        if(hooks.save) hooks.save();
+        QString err = hooks.save_to_profile(name);
+        SetStatus(err.isEmpty() ? tr("Saved to “%1”.").arg(QString::fromStdString(name)) : err);
+        RefreshProfiles();
+    };
+
+    connect(save_profile, &QPushButton::clicked, this, [this, do_save]()
+    {
+        if(profile_combo->currentIndex() < 0 || profile_combo->currentText().isEmpty())
+        {
+            SetStatus(tr("No profiles yet - click New… to create one."));
+            return;
+        }
+        do_save(profile_combo->currentText().toStdString());
+    });
+    connect(new_profile, &QPushButton::clicked, this, [this, do_save]()
+    {
+        bool ok = false;
+        QString name = QInputDialog::getText(this, tr("New profile"), tr("Profile name:"), QLineEdit::Normal, QString(), &ok).trimmed();
+        if(ok && !name.isEmpty())
+        {
+            do_save(name.toStdString());
+            profile_combo->setCurrentText(name);
+        }
+    });
+    connect(load_profile, &QPushButton::clicked, this, [this]()
+    {
+        if(hooks.load_profile && !profile_combo->currentText().isEmpty())
+        {
+            hooks.load_profile(profile_combo->currentText().toStdString());
+        }
+    });
+
+    l->addWidget(pg);
     l->addStretch(1);
 
     scroll->setWidget(panel);
@@ -579,6 +609,7 @@ void CanvasWidget::ReloadAll()
     updating_ui = false;
 
     RefreshDeviceTree();
+    RefreshProfiles();
     canvas->Rebuild();
     RefreshEffectControls();
     gradient_editor->update();
@@ -588,6 +619,39 @@ void CanvasWidget::ReloadAll()
         current_zone = -1;
     }
     RefreshZoneProperties();
+
+    if(calibration_dialog)
+    {
+        calibration_dialog->Reload();
+    }
+}
+
+void CanvasWidget::RefreshProfiles()
+{
+    if(!hooks.list_profiles)
+    {
+        return;
+    }
+
+    QString current = profile_combo->currentText();
+    profile_combo->blockSignals(true);
+    profile_combo->clear();
+    for(const std::string& name : hooks.list_profiles())
+    {
+        profile_combo->addItem(QString::fromStdString(name));
+    }
+    int idx = profile_combo->findText(current);
+    if(idx >= 0)
+    {
+        profile_combo->setCurrentIndex(idx);
+    }
+    profile_combo->blockSignals(false);
+}
+
+void CanvasWidget::SetStatus(const QString& text)
+{
+    status_label->setText(text);
+    status_timer->start();
 }
 
 void CanvasWidget::RefreshDeviceTree()

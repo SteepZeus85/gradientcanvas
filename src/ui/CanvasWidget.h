@@ -9,8 +9,23 @@
 
 #pragma once
 
+#include <QString>
+#include <QPointer>
 #include <QWidget>
 #include <functional>
+#include <string>
+#include <vector>
+
+/*---------------------------------------------------------*\
+| Calls back into the plugin (settings file, profiles)      |
+\*---------------------------------------------------------*/
+struct CanvasHooks
+{
+    std::function<void()>                               save;
+    std::function<std::vector<std::string>()>           list_profiles;
+    std::function<QString(const std::string&)>          save_to_profile;    /* returns error or "" */
+    std::function<void(const std::string&)>             load_profile;
+};
 
 class QCheckBox;
 class QComboBox;
@@ -22,6 +37,7 @@ class QSpinBox;
 class QTimer;
 class QTreeWidget;
 class QTreeWidgetItem;
+class CalibrationDialog;
 class GradientEditor;
 class LayoutCanvas;
 class ParamSlider;
@@ -32,12 +48,14 @@ class CanvasWidget : public QWidget
     Q_OBJECT
 
 public:
-    CanvasWidget(RenderEngine* engine, std::function<void()> save_callback, QWidget* parent = nullptr);
+    CanvasWidget(RenderEngine* engine, CanvasHooks hooks, QWidget* parent = nullptr);
 
     /*-----------------------------------------------------*\
     | Call after the model was replaced / devices rebound   |
     \*-----------------------------------------------------*/
     void    ReloadAll();
+    void    RefreshProfiles();
+    void    SetStatus(const QString& text);
 
 private slots:
     void    OnTreeItemChanged(QTreeWidgetItem* item, int column);
@@ -60,7 +78,7 @@ private:
     void    Rerender();
 
     RenderEngine*           engine;
-    std::function<void()>   save_callback;
+    CanvasHooks             hooks;
     QTimer*                 save_timer;
     bool                    updating_ui = false;
     int                     current_zone = -1;
@@ -87,6 +105,8 @@ private:
     QSpinBox*               canvas_h_spin;
     QLabel*                 fps_label;
 
+    QPointer<CalibrationDialog> calibration_dialog;
+
     /* canvas */
     LayoutCanvas*           canvas;
 
@@ -107,6 +127,11 @@ private:
     QCheckBox*              reverse_check;
     QComboBox*              preset_combo;
     GradientEditor*         gradient_editor;
+
+    /* profiles */
+    QComboBox*              profile_combo;
+    QLabel*                 status_label;
+    QTimer*                 status_timer;
 
     int                     frame_counter = 0;
     qint64                  fps_window_start = 0;
