@@ -1,136 +1,185 @@
-# Gradient Canvas: an OpenRGB plugin
+<div align="center">
 
-Gradient Canvas adds animated gradients, spirals, waves and plasma effects to OpenRGB. It draws them across a **2D layout map** of all your hardware. You place your keyboard, strips, fans, RAM and GPU on the map where they physically sit, and a gradient then sweeps across the whole setup as one continuous picture. Without the map, each device would animate on its own.
+# 🌈 Gradient Canvas
 
-Targets **OpenRGB 1.0** (plugin API **v5**). Tested against OpenRGB 1.0 (commit 81bbe18, 11 Sep 2026) and master as of 30 Sep 2026.
+**Animated gradients across your whole setup for [OpenRGB](https://openrgb.org).**
 
-## Features
+Place your keyboard, fans, strips, RAM and GPU on a map where they physically sit. A single gradient, spiral, wave or plasma then flows across all of them as one picture, instead of each device animating on its own.
 
-### Effects
-| Effect | What it does | Extra controls |
-|---|---|---|
-| Linear Gradient | Multi-stop gradient scrolling in any direction | Size, angle |
-| Radial | Rings expanding from a centre point | Size, centre |
-| Spiral | Rotating spiral arms | Size, arms, twist, centre |
-| Wave | Travelling brightness wave over a slowly drifting gradient | Size, angle, depth, sharpness |
-| Plasma | Organic sine-plasma through your gradient | Size, turbulence |
-| Breathing | Pulses while stepping through gradient colours, with an optional ripple from the centre | Ripple, breaths/loop, centre |
-| Colour Cycle | Whole setup cycles through the gradient, with an optional spatial spread | Angle, spread |
+[![Build](https://github.com/SteepZeus85/gradientcanvas/actions/workflows/build.yml/badge.svg)](https://github.com/SteepZeus85/gradientcanvas/actions/workflows/build.yml)
+![OpenRGB 1.0](https://img.shields.io/badge/OpenRGB-1.0-blueviolet)
+![Plugin API v5](https://img.shields.io/badge/plugin%20API-v5-blue)
+![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-green)
 
-All effects share **speed**, **brightness**, **mirror** (ping-pong instead of wrap) and **reverse**.
+![Gradient Canvas running a spiral effect across fans, RAM, GPU, keyboard and a case strip](docs/screenshot.webp)
 
-### Gradient editor
-* Blends in **OKLab**, so colour transitions stay vivid and don't pass through muddy greys.
-* Click the bar to add a stop, drag a stop to move it, double-click to recolour, right-click to delete.
-* 11 presets (Rainbow, Neon Sunset, Ocean, Cyberpunk, Fire, Aurora, Vaporwave…) plus a **Randomise** button.
+</div>
 
-### Layout map
-* **Device placement:** tick zones in the device list and they appear on the canvas. Drag to move, use the corner handle to resize, and the top handle to rotate (hold Shift to snap to 15°). You can also type exact X/Y/W/H/rotation values.
-* **Per-LED editing:** select a zone and press **Edit LEDs**. Every LED becomes a draggable dot.
-  * Matrix zones snap to their own cell grid. Other zones snap to the canvas grid.
-  * Rubber-band select several LEDs to move them together.
-  * Double-click an LED to reset it. Moved LEDs get an orange ring.
-  * **Arrange LEDs as ring** lays a fan's LEDs out in a circle in one click.
-  * Useful for case strips that turn corners, odd keyboard layouts, or any hand-placed LEDs.
-* A live preview of the effect is drawn behind the map. The ⊕ marker sets the centre for radial effects (you can also right-click anywhere on the canvas), and an arrow shows the direction of directional effects.
-* **Auto-arrange** stacks the placed zones tidily. **Add all** places every zone.
-* If a device is unplugged, its placement is kept (shown as *offline*) and it reconnects automatically when the device comes back.
+---
 
-### Colour calibration
-Different hardware often shows the same value as a different colour (for example, white looks blue on one strip and pink on a fan). Click **Calibrate colours…** in the toolbar:
+## ✨ Features
 
-* **Test colours:** lights every placed device with a solid White, Grey, Dim, Red, Green, Blue and so on, or a colour you pick. This works while paused, so you can compare devices side by side. Tick *Only light the selected device* to find which one is which.
-* **Per device or per zone**, you can set:
-  * **Brightness**
-  * **Red, Green and Blue gain** (white balance)
-  * **Gamma**, for when devices match at full brightness but not when dim
-  * **Saturation**
-  * **Channel order**, which fixes strips that show red as green (GRB, BRG and so on)
-* Corrections apply only to what's sent to the hardware. The on-screen preview always shows the intended colour.
-* Calibration is saved with the layout and applies to every profile, because it describes your hardware rather than a look. Calibrated zones are marked with •.
+### 🎨 Seven spatial effects
+| Effect | What it does |
+|---|---|
+| **Linear Gradient** | A multi-colour gradient sweeping in any direction |
+| **Radial** | Rings rippling out from a point you choose |
+| **Spiral** | Rotating spiral arms with adjustable twist |
+| **Wave** | A travelling band of brightness over drifting colour |
+| **Plasma** | Slow, organic, lava-lamp colour blobs |
+| **Breathing** | Pulses through your colours, optionally rippling outward |
+| **Colour Cycle** | Everything cycles together, or in a gentle spread |
 
-### Saving & profiles
-* Everything saves automatically to `%APPDATA%\OpenRGB\plugins\settings\GradientCanvas.json` (Linux/macOS: `~/.config/OpenRGB/plugins/settings/`), including whether it was playing, so it carries on after a restart.
-* **Profiles store the look** (effect, gradient, speed and play state). The **layout map is shared** by every profile, because it describes where your hardware physically is.
-* **Loading a profile:**
-  * If the profile has Gradient Canvas settings, they're applied and the animation plays or pauses as saved.
-  * If it doesn't, Gradient Canvas pauses so the profile's own colours show. It never paints over a profile.
-* **Profiles panel** (right-hand side):
-  * **Save to profile** adds the current look to an existing OpenRGB profile, keeping its device colours and other plugins' data.
-  * **New…** creates a profile containing just the Gradient Canvas look.
-  * **Load** switches to the selected profile.
-* OpenRGB's own *Save Profile* includes Gradient Canvas automatically when it creates a new profile. OpenRGB only refreshes plugins already stored in an existing profile, so for profiles made before you installed the plugin, use **Save to profile** once.
+Every effect has speed, size, brightness, mirror (ping-pong) and reverse controls.
 
-### Other
-* Choose between **Play/Pause** and **Send to devices**, so you can design with the on-screen preview without driving the LEDs.
-* Handles rescans and hot-plugs safely: it releases every controller when detection starts and rebinds when detection completes.
+### 🗺️ Layout map
+- **Drag, resize and rotate** every device zone on a canvas so effects follow your real layout.
+- **Move individual LEDs** with *Edit LEDs*: snap to a grid, rubber-band select, and double-click to reset.
+- **Arrange LEDs as ring** turns a fan's LED strip into a circle in one click.
+- A **live preview** of the effect is drawn behind the map. You can untick it to save CPU.
+- Unplugged devices keep their place and pick up again when reconnected.
 
-## Building
+### 🌈 Gradient editor
+- Colours blend in **OKLab**, so transitions stay vivid instead of turning muddy grey.
+- Click to add a colour stop, drag to move it, double-click to recolour, right-click to delete.
+- 11 presets (Rainbow, Neon Sunset, Cyberpunk, Aurora, Vaporwave…) plus **Randomise**.
 
-The plugin must be built with the **same Qt version (major.minor) and compiler** as the OpenRGB it will load into. Otherwise OpenRGB will refuse to load it or crash. Official OpenRGB 1.0 Windows builds use **Qt 6.8.3 + MSVC 2022 x64**.
+### 🎛️ Colour calibration
+Different hardware often shows the same colour differently: a "white" that's blue on one strip and pink on a fan. **Calibrate colours…** lights every device with a test colour so you can compare them side by side, then adjust each device's:
+- **Red / Green / Blue** balance
+- **Brightness**
+- **Gamma**
+- **Saturation**
+- **Channel order** (fixes strips wired as GRB, BRG and so on)
 
-### Easiest: GitHub Actions (no local toolchain)
-1. Push this folder to a GitHub repo.
-2. The included workflow (`.github/workflows/build.yml`) builds Windows and Linux binaries.
-3. Download `GradientCanvasPlugin-Windows-x64` from the run's artifacts.
+The on-screen preview always shows the colour you intended. Only what's sent to the hardware is corrected.
 
-If you use an older or pipeline OpenRGB build, run the workflow manually and set `openrgb_ref` to the OpenRGB commit your build came from. The plugin API version must match exactly.
+### 💾 Profiles & saving
+- Everything **saves automatically**, including whether the animation was playing.
+- Works with **OpenRGB profiles**: each profile can store its own effect and gradient. The layout map and calibration are shared across profiles, because they describe your hardware.
+- Loading a profile *without* Gradient Canvas settings pauses the animation, so that profile's own colours show.
 
-First fetch the OpenRGB headers into an `OpenRGB` subfolder:
-```sh
-git clone https://gitlab.com/CalcProgrammer1/OpenRGB.git OpenRGB
-```
-(Or add it as a submodule if you keep the plugin in git.) Check out the commit your OpenRGB build came from if it isn't the latest.
+### ⚡ Smooth with slow hardware
+Colours are sent to devices from a background thread, so slow RAM or motherboard controllers never freeze OpenRGB's window. Each device updates as fast as it can, and fast devices aren't held back by slow ones.
 
-### Windows (local)
-Install Qt 6.8.3 (MSVC 2022 64-bit) and Visual Studio 2022, then run this in an *x64 Native Tools Command Prompt*:
+---
+
+## 📥 Installation
+
+> **Requires OpenRGB 1.0** (plugin API v5). Older versions such as 0.9 can't load it.
+
+1. Go to the **[Releases](https://github.com/SteepZeus85/gradientcanvas/releases)** page and download `GradientCanvasPlugin.dll` (Windows) or `libGradientCanvasPlugin.so` (Linux).
+2. **Fully close OpenRGB**, including its tray icon.
+3. Copy the file into OpenRGB's plugins folder:
+
+   | OS | Folder |
+   |---|---|
+   | Windows | `%APPDATA%\OpenRGB\plugins\` |
+   | Linux / macOS | `~/.config/OpenRGB/plugins/` |
+
+4. Start OpenRGB. A **Gradient Canvas** tab appears along the top.
+
+> 💡 You can also paste `%APPDATA%\OpenRGB\plugins` into the Windows Run box (Win + R) to open the folder.
+
+## 🚀 Quick start
+
+1. Tick devices in the left-hand list, or click **Add all** and then **Auto-arrange**.
+2. Drag each device to where it sits on your desk or in your case. Use the round handle above a selected zone to rotate it.
+3. For fans, select the zone and click **Arrange LEDs as ring**.
+4. Pick an effect and a gradient preset, then press **▶ Play**.
+5. If colours don't match between devices, open **Calibrate colours…**.
+
+---
+
+## ❓ Troubleshooting
+
+<details>
+<summary><b>The Gradient Canvas tab doesn't appear</b></summary>
+
+- Make sure you're on **OpenRGB 1.0**: check *Information → Software*.
+- Check *Settings → Plugins*. If the plugin is listed but disabled, enable it.
+- Open the newest log in `%APPDATA%\OpenRGB\logs\` and search for `GradientCanvas`. The message there usually explains the problem, such as an incompatible API version.
+- The plugin must be built with the same Qt version as OpenRGB. Release builds match the official OpenRGB 1.0 Windows build (Qt 6.8.3, MSVC 2022). If you built OpenRGB yourself, build the plugin yourself too (see below).
+</details>
+
+<details>
+<summary><b>A device doesn't change colour</b></summary>
+
+- Make sure **Send to devices** is ticked and the animation is playing.
+- Some devices need a *Direct* mode in OpenRGB. The plugin switches to it automatically when one exists.
+- Hover over the fps counter to see how long the last device write took. Very slow devices (some RAM over SMBus, for example) simply update less often.
+</details>
+
+<details>
+<summary><b>Colours look different on each device</b></summary>
+
+Use **Calibrate colours…** in the toolbar. The window explains step by step how to match devices.
+</details>
+
+<details>
+<summary><b>Where are my settings stored?</b></summary>
+
+`%APPDATA%\OpenRGB\plugins\settings\GradientCanvas.json` (Linux/macOS: `~/.config/OpenRGB/plugins/settings/`). Delete it to reset the plugin.
+</details>
+
+---
+
+## 🛠️ Building from source
+
+Every push is built automatically by [GitHub Actions](.github/workflows/build.yml), and publishing a **Release** attaches the built files to it.
+
+To build locally you need the OpenRGB source (for its headers) in an `OpenRGB` subfolder and the **same Qt version** as your OpenRGB.
+
+**Windows** (Qt 6.8.3 MSVC 2022 64-bit + Visual Studio 2022, in an *x64 Native Tools Command Prompt*):
 ```bat
+git clone https://github.com/SteepZeus85/gradientcanvas.git
+cd gradientcanvas
+git clone https://gitlab.com/CalcProgrammer1/OpenRGB.git OpenRGB
 mkdir build && cd build
 C:\Qt\6.8.3\msvc2022_64\bin\qmake.exe ..\GradientCanvasPlugin.pro CONFIG+=release
 nmake
 ```
 
-### Linux
+**Linux:**
 ```sh
+git clone https://github.com/SteepZeus85/gradientcanvas.git && cd gradientcanvas
+git clone https://gitlab.com/CalcProgrammer1/OpenRGB.git OpenRGB
 mkdir build && cd build
 qmake6 ../GradientCanvasPlugin.pro && make -j$(nproc)
 make install   # copies to ~/.config/OpenRGB/plugins
 ```
 
-## Installing
+If your OpenRGB isn't the latest, check out the matching commit inside the `OpenRGB` folder first, because the plugin API version must match exactly.
 
-Copy the built library into OpenRGB's plugins folder:
+<details>
+<summary><b>Project layout</b></summary>
 
-| OS | Folder |
-|---|---|
-| Windows | `%APPDATA%\OpenRGB\plugins\` |
-| Linux | `~/.config/OpenRGB/plugins/` |
-| macOS | `~/.config/OpenRGB/plugins/` |
-
-Restart OpenRGB. A **Gradient Canvas** tab appears along the top. You can enable or disable the plugin under *Settings → Plugins*.
-
-## Quick start
-1. In the device list, tick the zones you want (or click **Add all**, then **Auto-arrange**).
-2. Drag each zone to where it physically sits. Use the rotate handle for vertical strips.
-3. For fans, select the zone and click **Arrange LEDs as ring**. For bent strips, press **Edit LEDs** and drag the dots into shape (resize the zone first if you need more room, since LEDs stay inside their zone's rectangle).
-4. Pick an effect and a gradient preset, then press **Play**.
-
-## How it works
-* Every LED gets a world position: its zone's rectangle, rotated about its centre, plus the LED's local position within it. That local position comes from the device's matrix map, an even spread along a strip, or your override.
-* Each frame, the active effect is evaluated at that point (aspect-corrected, so circles stay round). The colours are written with `SetColor()` and pushed with `UpdateLEDs()`, which is asynchronous in OpenRGB 1.0.
-* Devices are switched to their *Direct* (or *Custom/Static*) per-LED mode with `SetCustomMode()` when playback starts.
-
-## Project layout
 ```
 src/
-  GradientCanvasPlugin.*   plugin entry point, settings, profiles, device lifecycle
-  RenderEngine.*           frame timer, drives devices
-  Effects.*                effect maths
-  Gradient.*               OKLab gradient + presets
-  LayoutModel.*            zone/LED placement model and JSON
-  ui/CanvasWidget.*        main tab
-  ui/LayoutCanvas.*        QGraphicsView map editor
-  ui/GradientEditor.*      gradient stop editor
+  GradientCanvasPlugin.*    plugin entry point, settings file, profiles, device lifecycle
+  RenderEngine.*            frame timer + background output thread
+  Effects.*                 effect maths
+  Gradient.*                OKLab gradient + presets
+  Calibration.*             per-zone colour correction
+  LayoutModel.*             zone / LED placement and JSON
+  ui/CanvasWidget.*         the main tab
+  ui/LayoutCanvas.*         the map editor
+  ui/GradientEditor.*       gradient stop editor
+  ui/CalibrationDialog.*    colour calibration window
 ```
+</details>
 
-License: GPL-2.0-or-later, the same as OpenRGB.
+---
+
+## 🤝 Contributing
+
+Bug reports, ideas and pull requests are welcome. When reporting a bug, please include:
+- your OpenRGB version (*Information → Software*)
+- the relevant part of the log from `%APPDATA%\OpenRGB\logs\`
+- which devices are involved
+
+## 📜 License
+
+Gradient Canvas is released under the **GNU General Public License v2.0 or later**, the same licence as OpenRGB. See [LICENSE](LICENSE).
+
+Not affiliated with or endorsed by the OpenRGB project. Thanks to the OpenRGB developers for the plugin API that makes this possible.
