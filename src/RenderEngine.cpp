@@ -137,7 +137,7 @@ void RenderEngine::RenderFrame()
     const double cw     = std::max(1.0, layout.canvas_w);
     const double ch     = std::max(1.0, layout.canvas_h);
     const double aspect = cw / ch;
-    const bool   wanted = (playing || test_active || force_send_once) && output_enabled && !suspended;
+    const bool   wanted = (playing || test_active || force_send_once) && output_enabled && !suspended && !standby;
     force_send_once     = false;
 
     std::unique_ptr<OutFrame> frame;
@@ -270,7 +270,7 @@ void RenderEngine::OutputThreadFunction()
         | started, the generation changed and these         |
         | controller pointers may already be freed          |
         \*-------------------------------------------------*/
-        if(frame->generation != generation.load() || suspended)
+        if(frame->generation != generation.load() || suspended || standby)
         {
             continue;
         }
@@ -470,4 +470,27 @@ void RenderEngine::Resume()
 {
     suspended   = false;
     reset_modes = true;     /* profile may have changed device modes */
+}
+
+void RenderEngine::SetStandby(bool new_standby)
+{
+    if(standby == new_standby)
+    {
+        return;
+    }
+
+    standby = new_standby;
+
+    if(new_standby)
+    {
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+            pending_frame.reset();
+        }
+        std::lock_guard<std::mutex> wait(output_mutex);
+    }
+    else
+    {
+        reset_modes = true;     /* the other window may have changed modes */
+    }
 }

@@ -14,6 +14,7 @@
 #include "OpenRGBPluginInterface.h"
 
 class CanvasWidget;
+class InstanceGuard;
 class RenderEngine;
 
 class GradientCanvasPlugin : public QObject, public OpenRGBPluginInterface
@@ -58,6 +59,7 @@ public:
 
 private:
     void                SaveSettings();
+    void                OnOwnershipChanged(bool is_owner);
     void                RebindDevices();
     filesystem::path    SettingsFilePath();
     nlohmann::json      LoadSettingsFile();
@@ -66,6 +68,8 @@ private:
     OpenRGBPluginAPIInterface*  api     = nullptr;
     RenderEngine*               engine  = nullptr;
     QPointer<CanvasWidget>      widget;
+    InstanceGuard*              guard   = nullptr;  /* owned by engine */
+    bool                        was_standby = false;
 
     nlohmann::json              pending_profile;
     std::atomic<int>            profile_seq         {0};

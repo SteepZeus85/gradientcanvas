@@ -6,6 +6,7 @@
 
 #include "GradientCanvasPlugin.h"
 #include "RenderEngine.h"
+#include "InstanceGuard.h"
 #include "ResourceManagerCallback.h"
 #include "ui/CanvasWidget.h"
 
@@ -14,6 +15,7 @@
 #include <QMetaObject>
 #include <QPainter>
 #include <QTimer>
+#include <algorithm>
 #include <fstream>
 #include <regex>
 
@@ -147,8 +149,24 @@ QWidget* GradientCanvasPlugin::GetWidget()
         hooks.list_profiles     = [this]() { return api ? api->GetProfileList() : std::vector<std::string>(); };
         hooks.save_to_profile   = [this](const std::string& name) { return SaveToProfile(name); };
         hooks.load_profile      = [this](const std::string& name) { if(api) api->LoadProfile(name); };
+        hooks.take_control      = [this]() { if(guard) guard->Claim(); };
 
         widget = new CanvasWidget(engine, hooks);
+    }
+
+    /*-----------------------------------------------------*    | Only one OpenRGB window may drive the lights. The     |
+    | window opened last takes over; any other copy (e.g.   |
+    | one minimised to the tray) drops to standby.          |
+    \*-----------------------------------------------------*/
+    if(!guard && api)
+    {
+        filesystem::path owner_path = SettingsFilePath();
+        owner_path.replace_extension(".owner");
+
+        guard = new InstanceGuard(QString::fromStdWString(owner_path.wstring()), engine);
+        connect(guard, &InstanceGuard::OwnershipChanged, this, &GradientCanvasPlugin::OnOwnershipChanged);
+        guard->Claim();
+        OnOwnershipChanged(guard->IsOwner());
     }
 
     return widget;
@@ -165,6 +183,12 @@ void GradientCanvasPlugin::Unload()
     {
         SaveSettings();             /* save first so the play state survives a restart */
         engine->SetPlaying(false);
+    }
+
+    if(guard)
+    {
+        guard->Release();           /* lets a standby window take over at once */
+        guard = nullptr;            /* deleted with the engine */
     }
 
     delete widget.data();
@@ -310,6 +334,46 @@ void GradientCanvasPlugin::SettingsManagerUpdated(unsigned int)
 {
 }
 
+void GradientCanvasPlugin::OnOwnershipChanged(bool is_owner)
+{
+    if(!engine)
+    {
+        return;
+    }
+
+    if(is_owner)
+    {
+        /*-------------------------------------------------*\
+        | Taking over from another window: it may have      |
+        | changed the settings since we loaded them         |
+        \*-------------------------------------------------*/
+        if(was_standby)
+        {
+            nlohmann::json settings = LoadSettingsFile();
+            if(settings.is_object() && !settings.empty())
+            {
+                engine->FromJson(settings);
+            }
+            RebindDevices();
+            GC_LOG(api, "[%s] This window now controls the lights", PLUGIN_NAME);
+        }
+        engine->SetStandby(false);
+    }
+    else
+    {
+        engine->SetStandby(true);
+        engine->SetTestPattern(false);
+        GC_LOG(api, "[%s] Another OpenRGB window controls the lights - standby", PLUGIN_NAME);
+    }
+
+    was_standby = !is_owner;
+
+    if(widget)
+    {
+        widget->SetStandby(!is_owner);
+    }
+}
+
 void GradientCanvasPlugin::RebindDevices()
 {
     if(!engine || !api)
@@ -372,6 +436,15 @@ nlohmann::json GradientCanvasPlugin::LoadSettingsFile()
 void GradientCanvasPlugin::SaveSettings()
 {
     if(!engine || !api)
+    {
+        return;
+    }
+
+    /*-----------------------------------------------------*\
+    | A standby window must not overwrite the settings of   |
+    | the window that is driving the lights                 |
+    \*-----------------------------------------------------*/
+    if(guard && !guard->IsOwner())
     {
         return;
     }
@@ -454,6 +527,20 @@ QString GradientCanvasPlugin::SaveToProfile(const std::string& profile_name)
     }
     else
     {
+        /*-------------------------------------------------*\
+        | The profile exists but not as a local file: the   |
+        | OpenRGB background service keeps it. Saving from  |
+        | a plugin would REPLACE it with just our section   |
+        | and lose its device colours, so don't.            |
+        \*-------------------------------------------------*/
+        std::vector<std::string> existing = api->GetProfileList();
+        if(std::find(existing.begin(), existing.end(), profile_name) != existing.end())
+        {
+            return tr("This profile is stored by the OpenRGB service, so Gradient Canvas can't update it without "
+                      "wiping its device colours. Load it and use OpenRGB's own Save Profile button instead "
+                      "(it includes Gradient Canvas when the profile already has it), or click New… to make a new one.");
+        }
+
         /*-------------------------------------------------*\
         | New profile containing just the Gradient Canvas   |
         | look (device states are left as they are)         |

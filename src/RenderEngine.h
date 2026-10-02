@@ -112,6 +112,13 @@ public:
     bool            IsSuspended() const { return suspended; }
 
     /*-----------------------------------------------------*\
+    | Standby: another OpenRGB window owns the lights, so   |
+    | this one only previews. Safe from any thread.         |
+    \*-----------------------------------------------------*/
+    void            SetStandby(bool standby);
+    bool            IsStandby() const { return standby; }
+
+    /*-----------------------------------------------------*\
     | Diagnostics: how long the last device write took, and |
     | how many frames were skipped because hardware was     |
     | slower than the frame rate                            |
@@ -179,6 +186,7 @@ private:
     std::atomic<unsigned int>           dropped_frames  {0};
 
     std::atomic<bool>                   suspended       {false};
+    std::atomic<bool>                   standby         {false};
     bool                                test_active     = false;
     QColor                              test_color      = Qt::white;
     std::set<int>                       test_only_zones;
