@@ -2,7 +2,7 @@
 
 Gradient Canvas adds animated gradients, spirals, waves and plasma effects to OpenRGB. It draws them across a **2D layout map** of all your hardware. You place your keyboard, strips, fans, RAM and GPU on the map where they physically sit, and a gradient then sweeps across the whole setup as one continuous picture. Without the map, each device would animate on its own.
 
-Targets **OpenRGB 1.0** (plugin API **v5**). Tested against OpenRGB master as of 30 Sep 2026.
+Targets **OpenRGB 1.0** (plugin API **v5**). Tested against OpenRGB 1.0 (commit 81bbe18, 11 Sep 2026) and master as of 30 Sep 2026.
 
 ## Features
 
@@ -36,9 +36,33 @@ All effects share **speed**, **brightness**, **mirror** (ping-pong instead of wr
 * **Auto-arrange** stacks the placed zones tidily. **Add all** places every zone.
 * If a device is unplugged, its placement is kept (shown as *offline*) and it reconnects automatically when the device comes back.
 
+### Colour calibration
+Different hardware often shows the same value as a different colour (for example, white looks blue on one strip and pink on a fan). Click **Calibrate colours…** in the toolbar:
+
+* **Test colours:** lights every placed device with a solid White, Grey, Dim, Red, Green, Blue and so on, or a colour you pick. This works while paused, so you can compare devices side by side. Tick *Only light the selected device* to find which one is which.
+* **Per device or per zone**, you can set:
+  * **Brightness**
+  * **Red, Green and Blue gain** (white balance)
+  * **Gamma**, for when devices match at full brightness but not when dim
+  * **Saturation**
+  * **Channel order**, which fixes strips that show red as green (GRB, BRG and so on)
+* Corrections apply only to what's sent to the hardware. The on-screen preview always shows the intended colour.
+* Calibration is saved with the layout and applies to every profile, because it describes your hardware rather than a look. Calibrated zones are marked with •.
+
+### Saving & profiles
+* Everything saves automatically to `%APPDATA%\OpenRGB\plugins\settings\GradientCanvas.json` (Linux/macOS: `~/.config/OpenRGB/plugins/settings/`), including whether it was playing, so it carries on after a restart.
+* **Profiles store the look** (effect, gradient, speed and play state). The **layout map is shared** by every profile, because it describes where your hardware physically is.
+* **Loading a profile:**
+  * If the profile has Gradient Canvas settings, they're applied and the animation plays or pauses as saved.
+  * If it doesn't, Gradient Canvas pauses so the profile's own colours show. It never paints over a profile.
+* **Profiles panel** (right-hand side):
+  * **Save to profile** adds the current look to an existing OpenRGB profile, keeping its device colours and other plugins' data.
+  * **New…** creates a profile containing just the Gradient Canvas look.
+  * **Load** switches to the selected profile.
+* OpenRGB's own *Save Profile* includes Gradient Canvas automatically when it creates a new profile. OpenRGB only refreshes plugins already stored in an existing profile, so for profiles made before you installed the plugin, use **Save to profile** once.
+
 ### Other
 * Choose between **Play/Pause** and **Send to devices**, so you can design with the on-screen preview without driving the LEDs.
-* Settings save automatically, and the full setup (layout, effect and gradient) is stored in OpenRGB **profiles**.
 * Handles rescans and hot-plugs safely: it releases every controller when detection starts and rebinds when detection completes.
 
 ## Building

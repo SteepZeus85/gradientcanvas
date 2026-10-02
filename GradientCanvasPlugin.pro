@@ -18,7 +18,7 @@ TARGET       = GradientCanvasPlugin
 #-----------------------------------------------------------------------------------------------#
 GIT_COMMIT = $$system(git -C $$PWD rev-parse --short HEAD 2> $$QMAKE_SYSTEM_NULL_DEVICE)
 isEmpty(GIT_COMMIT): GIT_COMMIT = local
-DEFINES += GRADIENT_CANVAS_VERSION=\\\"1.0.0\\\" GRADIENT_CANVAS_COMMIT=\\\"$$GIT_COMMIT\\\"
+DEFINES += GRADIENT_CANVAS_VERSION=\\\"1.2.0\\\" GRADIENT_CANVAS_COMMIT=\\\"$$GIT_COMMIT\\\"
 
 #-----------------------------------------------------------------------------------------------#
 # OpenRGB headers (header-only use - the plugin talks to OpenRGB through pure virtual APIs)     #
@@ -41,6 +41,9 @@ HEADERS +=                                                                      
     $$OPENRGB/ResourceManagerCallback.h                                                         \
     src/GradientCanvasPlugin.h                                                                  \
     src/Gradient.h                                                                              \
+    src/Calibration.h                                                                           \
+    src/ui/CalibrationDialog.h                                                                  \
+    src/ui/ParamSlider.h                                                                        \
     src/Effects.h                                                                               \
     src/LayoutModel.h                                                                           \
     src/RenderEngine.h                                                                          \
@@ -48,9 +51,13 @@ HEADERS +=                                                                      
     src/ui/GradientEditor.h                                                                     \
     src/ui/LayoutCanvas.h                                                                       \
 
+DISTFILES += src/GradientCanvasPlugin.json
+
 SOURCES +=                                                                                      \
     src/GradientCanvasPlugin.cpp                                                                \
     src/Gradient.cpp                                                                            \
+    src/Calibration.cpp                                                                         \
+    src/ui/CalibrationDialog.cpp                                                                \
     src/Effects.cpp                                                                             \
     src/LayoutModel.cpp                                                                         \
     src/RenderEngine.cpp                                                                        \
