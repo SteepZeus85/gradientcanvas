@@ -195,6 +195,7 @@ src/
 
 Bug reports, ideas and pull requests are welcome. When reporting a bug, please include:
 - your OpenRGB version (*Information → Software*)
+- your GradientCanvas version
 - the relevant part of the log from `%APPDATA%\OpenRGB\logs\`
 - which devices are involved
 
