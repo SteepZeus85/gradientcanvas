@@ -45,10 +45,21 @@ void CanvasBackground::paint(QPainter* painter, const QStyleOptionGraphicsItem*,
     \*-----------------------------------------------------*/
     if(!preview.isNull())
     {
+        /*-------------------------------------------------*\
+        | Scale once per preview update to the on-screen    |
+        | size, then blit 1:1                               |
+        \*-------------------------------------------------*/
+        QRectF dev   = painter->worldTransform().mapRect(rect);
+        QSize  dsize = dev.size().toSize().boundedTo(QSize(4096, 4096)).expandedTo(QSize(1, 1));
+        if(scaled_version != preview_version || scaled_size != dsize)
+        {
+            scaled_cache   = QPixmap::fromImage(preview.scaled(dsize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+            scaled_version = preview_version;
+            scaled_size    = dsize;
+        }
         painter->save();
         painter->setOpacity(0.45);
-        painter->setRenderHint(QPainter::SmoothPixmapTransform);
-        painter->drawImage(rect, preview);
+        painter->drawPixmap(rect, scaled_cache, QRectF(scaled_cache.rect()));
         painter->restore();
     }
 
@@ -544,7 +555,12 @@ LayoutCanvas::LayoutCanvas(RenderEngine* engine_ptr, QWidget* parent)
     setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
     setDragMode(QGraphicsView::RubberBandDrag);
     setBackgroundBrush(QColor(28, 28, 32));
-    setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
+    setViewportUpdateMode(QGraphicsView::SmartViewportUpdate);
+    setOptimizationFlags(QGraphicsView::DontSavePainterState | QGraphicsView::DontAdjustForAntialiasing);
+    refresh_clock.start();
+    trailing_refresh = new QTimer(this);
+    trailing_refresh->setSingleShot(true);
+    connect(trailing_refresh, &QTimer::timeout, this, &LayoutCanvas::DoRefresh);
     setMinimumSize(400, 260);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -604,8 +620,40 @@ void LayoutCanvas::Rebuild()
 
 void LayoutCanvas::RefreshFrame()
 {
-    UpdatePreviewImage();
-    background->update();
+    /*-----------------------------------------------------*\
+    | LED dots repaint at up to 20 fps. If a frame arrives  |
+    | too soon, a trailing refresh makes sure the final     |
+    | state of an edit is always shown.                     |
+    \*-----------------------------------------------------*/
+    const qint64 led_interval = 50;
+    qint64 now = refresh_clock.elapsed();
+
+    if(now - last_led_paint >= led_interval)
+    {
+        DoRefresh();
+    }
+    else if(!trailing_refresh->isActive())
+    {
+        trailing_refresh->start(int(led_interval - (now - last_led_paint)));
+    }
+}
+
+void LayoutCanvas::DoRefresh()
+{
+    qint64 now     = refresh_clock.elapsed();
+    last_led_paint = now;
+
+    /*-----------------------------------------------------*\
+    | The animated background is the expensive part: ~8 fps |
+    | is plenty for a dimmed backdrop                       |
+    \*-----------------------------------------------------*/
+    if(live_preview && now - last_bg_paint >= 120)
+    {
+        last_bg_paint = now;
+        UpdatePreviewImage();
+        background->update();
+    }
+
     for(ZoneItem* item : zone_items)
     {
         item->update();
@@ -617,6 +665,19 @@ void LayoutCanvas::RefreshFrame()
             }
         }
     }
+}
+
+void LayoutCanvas::SetLivePreview(bool enabled)
+{
+    live_preview = enabled;
+    if(!enabled)
+    {
+        background->preview = QImage();
+        background->preview_version++;
+    }
+    last_bg_paint = -1000;
+    DoRefresh();
+    background->update();
 }
 
 void LayoutCanvas::SyncZone(int zone_index)
@@ -769,6 +830,7 @@ void LayoutCanvas::UpdatePreviewImage()
     {
         background->preview = QImage(iw, ih, QImage::Format_RGB32);
     }
+    background->preview_version++;
 
     for(int y = 0; y < ih; y++)
     {

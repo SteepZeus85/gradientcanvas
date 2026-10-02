@@ -293,7 +293,13 @@ QWidget* CanvasWidget::BuildToolbar()
     l->addWidget(fps_spin);
     l->addWidget(fps_label);
     l->addSpacing(12);
+    QCheckBox* preview_check = new QCheckBox(tr("Live preview"), bar);
+    preview_check->setChecked(true);
+    preview_check->setToolTip(tr("Animate the effect behind the map. Untick to save CPU - LED dots still update."));
+    connect(preview_check, &QCheckBox::toggled, this, [this](bool on) { canvas->SetLivePreview(on); });
+
     l->addWidget(calibrate);
+    l->addWidget(preview_check);
     l->addSpacing(12);
     l->addWidget(led_edit_button);
     l->addWidget(snap_check);
@@ -937,18 +943,35 @@ void CanvasWidget::OnEffectChanged(int index)
 
 void CanvasWidget::OnFrame()
 {
-    canvas->RefreshFrame();
+    /*-----------------------------------------------------*\
+    | Don't spend time repainting the map while the tab is  |
+    | hidden or OpenRGB is minimised to the tray            |
+    \*-----------------------------------------------------*/
+    if(canvas->isVisible())
+    {
+        canvas->RefreshFrame();
+    }
 
     /*-----------------------------------------------------*\
-    | Measured frame rate                                   |
+    | Measured frame rate + device write time               |
     \*-----------------------------------------------------*/
     qint64 now = QDateTime::currentMSecsSinceEpoch();
     frame_counter++;
     if(now - fps_window_start >= 1000)
     {
-        fps_label->setText(engine->IsPlaying()
-                           ? QString("%1 fps").arg(frame_counter * 1000.0 / std::max<qint64>(1, now - fps_window_start), 0, 'f', 0)
-                           : QString());
+        if(engine->IsPlaying() && fps_label->isVisible())
+        {
+            double       measured = frame_counter * 1000.0 / std::max<qint64>(1, now - fps_window_start);
+            double       write_ms = engine->LastOutputMs();
+            unsigned int dropped  = engine->DroppedFrames();
+            fps_label->setText(QString("%1 fps").arg(measured, 0, 'f', 0));
+            fps_label->setToolTip(tr("Last device write: %1 ms\nFrames skipped because hardware was busy: %2")
+                                  .arg(write_ms, 0, 'f', 1).arg(dropped));
+        }
+        else
+        {
+            fps_label->setText(QString());
+        }
         frame_counter    = 0;
         fps_window_start = now;
     }

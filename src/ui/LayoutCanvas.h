@@ -14,6 +14,9 @@
 #include <QGraphicsView>
 #include <QGraphicsItem>
 #include <QImage>
+#include <QPixmap>
+#include <QElapsedTimer>
+#include <QTimer>
 #include <vector>
 
 class RenderEngine;
@@ -32,6 +35,20 @@ public:
     void    CanvasResized() { prepareGeometryChange(); }
 
     QImage  preview;
+    quint64 preview_version = 0;
+
+private:
+    /*-----------------------------------------------------*\
+    | The preview is tiny (160 px) and gets stretched over  |
+    | the whole canvas. Smooth-scaling it on every repaint  |
+    | was the main GUI cost, so the scaled result is cached |
+    | per preview update and view size.                     |
+    \*-----------------------------------------------------*/
+    QPixmap scaled_cache;
+    quint64 scaled_version = ~0ull;
+    QSize   scaled_size;
+
+public:
 
 private:
     LayoutCanvas* canvas;
@@ -132,6 +149,8 @@ public:
 
     void    Rebuild();                  /* recreate items from the model   */
     void    RefreshFrame();             /* repaint colours for a new frame */
+    void    SetLivePreview(bool enabled);
+    bool    LivePreview() const         { return live_preview; }
     void    SyncZone(int zone_index);   /* model changed outside canvas    */
     void    SelectZone(int zone_index);
     int     SelectedZone() const;
@@ -177,4 +196,15 @@ private:
     double                  grid_size       = 10.0;
     bool                    user_zoomed     = false;
     bool                    rebuilding      = false;
+
+    /*-----------------------------------------------------*\
+    | Repaint throttling - the map doesn't need to redraw   |
+    | at the device frame rate                              |
+    \*-----------------------------------------------------*/
+    void    DoRefresh();
+    bool                    live_preview    = true;
+    QElapsedTimer           refresh_clock;
+    qint64                  last_led_paint  = -1000;
+    qint64                  last_bg_paint   = -1000;
+    QTimer*                 trailing_refresh = nullptr;
 };
