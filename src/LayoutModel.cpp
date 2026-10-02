@@ -293,6 +293,10 @@ nlohmann::json LayoutModel::ToJson() const
         zj["h"]           = z.h;
         zj["rotation"]    = z.rotation;
         zj["reverse"]     = z.reverse;
+        if(!z.calibration.IsIdentity())
+        {
+            zj["calibration"] = z.calibration.ToJson();
+        }
 
         nlohmann::json leds = nlohmann::json::object();
         for(const auto& kv : z.led_overrides)
@@ -338,6 +342,10 @@ void LayoutModel::FromJson(const nlohmann::json& j)
         z.h           = zj.value("h",           30.0);
         z.rotation    = zj.value("rotation",    0.0);
         z.reverse     = zj.value("reverse",     false);
+        if(zj.contains("calibration"))
+        {
+            z.calibration.FromJson(zj["calibration"]);
+        }
 
         if(zj.contains("leds") && zj["leds"].is_object())
         {

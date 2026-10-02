@@ -98,6 +98,10 @@ void RenderEngine::OnTick()
 
     if(!playing)
     {
+        if(test_active)
+        {
+            RenderFrame();      /* keep re-sending so replugged devices update too */
+        }
         return;
     }
 
@@ -115,7 +119,8 @@ void RenderEngine::RenderFrame()
     const double cw     = std::max(1.0, layout.canvas_w);
     const double ch     = std::max(1.0, layout.canvas_h);
     const double aspect = cw / ch;
-    const bool   send   = playing && output_enabled && devices_valid;
+    const bool   send   = (playing || test_active || force_send_once) && output_enabled && devices_valid && !suspended;
+    force_send_once     = false;
 
     if(send)
     {
@@ -138,19 +143,40 @@ void RenderEngine::RenderFrame()
 
         for(unsigned int i = 0; i < z.led_count; i++)
         {
-            QPointF world = z.LedWorld(i);
             float r, g, b;
 
-            EvaluateEffect(params, gradient, world.x() / cw, world.y() / ch, aspect, phase, time_s, r, g, b);
+            if(test_active)
+            {
+                bool lit = test_only_zones.empty() || test_only_zones.count((int)(&z - layout.zones.data()));
+                r = lit ? (float)test_color.redF()   : 0.0f;
+                g = lit ? (float)test_color.greenF() : 0.0f;
+                b = lit ? (float)test_color.blueF()  : 0.0f;
+            }
+            else
+            {
+                QPointF world = z.LedWorld(i);
+                EvaluateEffect(params, gradient, world.x() / cw, world.y() / ch, aspect, phase, time_s, r, g, b);
+            }
 
-            int ri = std::clamp((int)std::lround(r * 255.0f), 0, 255);
-            int gi = std::clamp((int)std::lround(g * 255.0f), 0, 255);
-            int bi = std::clamp((int)std::lround(b * 255.0f), 0, 255);
+            /*---------------------------------------------*\
+            | Preview shows the intended colour...          |
+            \*---------------------------------------------*/
+            z.preview[i] = QColor(std::clamp((int)std::lround(r * 255.0f), 0, 255),
+                                  std::clamp((int)std::lround(g * 255.0f), 0, 255),
+                                  std::clamp((int)std::lround(b * 255.0f), 0, 255));
 
-            z.preview[i] = QColor(ri, gi, bi);
-
+            /*---------------------------------------------*\
+            | ...devices get the calibrated one             |
+            \*---------------------------------------------*/
             if(send && z.controller)
             {
+                if(!z.calibration.IsIdentity())
+                {
+                    z.calibration.Apply(r, g, b);
+                }
+                int ri = std::clamp((int)std::lround(r * 255.0f), 0, 255);
+                int gi = std::clamp((int)std::lround(g * 255.0f), 0, 255);
+                int bi = std::clamp((int)std::lround(b * 255.0f), 0, 255);
                 z.controller->SetColor(z.start_index + i, ToRGBColor(ri, gi, bi));
             }
         }
@@ -183,6 +209,56 @@ nlohmann::json RenderEngine::ToJson() const
         {"playing",  playing},
         {"output",   output_enabled},
     };
+}
+
+nlohmann::json RenderEngine::ProfileJson() const
+{
+    nlohmann::json j = ToJson();
+    j.erase("layout");
+    return j;
+}
+
+void RenderEngine::ApplyProfileJson(const nlohmann::json& j)
+{
+    if(!j.is_object())
+    {
+        return;
+    }
+    nlohmann::json look = j;
+    look.erase("layout");       /* older (1.0.1) profiles carried the layout too */
+    FromJson(look);
+}
+
+void RenderEngine::SetTestPattern(bool active, const QColor& color, const std::set<int>& only_zones)
+{
+    {
+        std::lock_guard<std::mutex> lock(device_mutex);
+        /*-------------------------------------------------*\
+        | Leaving the test pattern while paused: send one   |
+        | frame of the paused effect so devices don't stay  |
+        | stuck on the test colour                          |
+        \*-------------------------------------------------*/
+        force_send_once = test_active && !active && !playing;
+        test_active     = active;
+        test_color      = color;
+        test_only_zones = only_zones;
+        custom_mode_set.clear();
+    }
+    RenderFrame();
+}
+
+void RenderEngine::Suspend()
+{
+    /* taking the lock waits out any frame currently being sent */
+    std::lock_guard<std::mutex> lock(device_mutex);
+    suspended = true;
+}
+
+void RenderEngine::Resume()
+{
+    std::lock_guard<std::mutex> lock(device_mutex);
+    suspended = false;
+    custom_mode_set.clear();    /* profile may have changed device modes */
 }
 
 void RenderEngine::FromJson(const nlohmann::json& j)

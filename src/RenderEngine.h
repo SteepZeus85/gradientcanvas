@@ -13,6 +13,8 @@
 #include <QObject>
 #include <QTimer>
 #include <QElapsedTimer>
+#include <QColor>
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <set>
@@ -64,8 +66,36 @@ public:
     \*-----------------------------------------------------*/
     void            RenderFrame();
 
+    /*-----------------------------------------------------*\
+    | Persistence                                           |
+    |   ToJson / FromJson     - everything (plugin settings)|
+    |   ProfileJson / Apply.. - look only (effect, gradient,|
+    |                           play state) for OpenRGB     |
+    |                           profiles. The layout map is |
+    |                           physical, so it stays global|
+    |                           and profiles never move it. |
+    \*-----------------------------------------------------*/
     nlohmann::json  ToJson() const;
     void            FromJson(const nlohmann::json& j);
+    nlohmann::json  ProfileJson() const;
+    void            ApplyProfileJson(const nlohmann::json& j);
+
+    /*-----------------------------------------------------*\
+    | Suspend() stops device output immediately and is safe |
+    | from any thread - used while OpenRGB applies a        |
+    | profile so we never paint over it.                    |
+    \*-----------------------------------------------------*/
+    /*-----------------------------------------------------*\
+    | Calibration test pattern: while active, every placed  |
+    | zone gets this solid colour (through its calibration) |
+    | even when paused, so devices can be compared by eye.  |
+    \*-----------------------------------------------------*/
+    void            SetTestPattern(bool active, const QColor& color = Qt::white, const std::set<int>& only_zones = {});
+    bool            TestPatternActive() const { return test_active; }
+
+    void            Suspend();
+    void            Resume();
+    bool            IsSuspended() const { return suspended; }
 
 signals:
     void            FrameRendered();
@@ -88,5 +118,10 @@ private:
     std::mutex                          device_mutex;
     bool                                devices_valid   = false;
     bool                                devices_blocked = false;
+    std::atomic<bool>                   suspended       {false};
+    bool                                test_active     = false;
+    QColor                              test_color      = Qt::white;
+    std::set<int>                       test_only_zones;
+    bool                                force_send_once = false;
     std::set<RGBControllerInterface*>   custom_mode_set;
 };
