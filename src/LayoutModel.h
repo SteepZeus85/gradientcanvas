@@ -17,6 +17,7 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "RGBControllerInterface.h"
+#include "Calibration.h"
 
 struct ZonePlacement
 {
@@ -40,6 +41,12 @@ struct ZonePlacement
     double          h           = 30.0;
     double          rotation    = 0.0;
     bool            reverse     = false;
+
+    /*-----------------------------------------------------*\
+    | Hardware colour correction (persisted, global - not   |
+    | stored in profiles since it describes the hardware)   |
+    \*-----------------------------------------------------*/
+    ColorCalibration calibration;
 
     /*-----------------------------------------------------*\
     | Per-LED overrides, zone-local LED index -> position   |

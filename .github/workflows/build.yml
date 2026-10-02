@@ -1,14 +1,21 @@
 name: Build
 
+# Builds on every push / PR. When you publish a GitHub Release, the built
+# plugin files are attached to that release automatically.
 on:
   push:
   pull_request:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       openrgb_ref:
         description: "OpenRGB branch/tag/commit to build against (match your OpenRGB build)"
         required: false
         default: "master"
+
+permissions:
+  contents: write   # needed to attach files to releases
 
 env:
   OPENRGB_REF: ${{ github.event.inputs.openrgb_ref || 'master' }}
@@ -46,10 +53,22 @@ jobs:
           qmake ..\GradientCanvasPlugin.pro CONFIG+=release
           nmake
 
+      - name: Collect
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "$(find build -name GradientCanvasPlugin.dll | head -1)" dist/GradientCanvasPlugin.dll
+
       - uses: actions/upload-artifact@v4
         with:
           name: GradientCanvasPlugin-Windows-x64
-          path: build/**/GradientCanvasPlugin.dll
+          path: dist/GradientCanvasPlugin.dll
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/GradientCanvasPlugin.dll
 
   linux:
     runs-on: ubuntu-24.04
@@ -77,3 +96,9 @@ jobs:
         with:
           name: GradientCanvasPlugin-Linux-x64
           path: build/libGradientCanvasPlugin.so
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/libGradientCanvasPlugin.so

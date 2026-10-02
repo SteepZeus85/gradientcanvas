@@ -8,15 +8,20 @@
 #include "GradientEditor.h"
 #include "LayoutCanvas.h"
 #include "RenderEngine.h"
+#include "ParamSlider.h"
+#include "CalibrationDialog.h"
 
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QLabel>
 #include <QPushButton>
 #include <QRandomGenerator>
@@ -32,90 +37,18 @@
 #include <cmath>
 #include <map>
 
-/*=========================================================*\
-| ParamSlider - slider + spin box bound to a double         |
-\*=========================================================*/
-class ParamSlider : public QWidget
-{
-public:
-    ParamSlider(double min, double max, int decimals, const QString& suffix = QString(), QWidget* parent = nullptr)
-        : QWidget(parent)
-    {
-        slider = new QSlider(Qt::Horizontal, this);
-        slider->setRange(0, 1000);
-        spin   = new QDoubleSpinBox(this);
-        spin->setDecimals(decimals);
-        spin->setSuffix(suffix);
-        spin->setFixedWidth(78);
-        SetRange(min, max, decimals);
 
-        QHBoxLayout* l = new QHBoxLayout(this);
-        l->setContentsMargins(0, 0, 0, 0);
-        l->addWidget(slider, 1);
-        l->addWidget(spin);
-
-        connect(slider, &QSlider::valueChanged, this, [this](int v)
-        {
-            if(guard) return;
-            double d = lo + (hi - lo) * v / 1000.0;
-            guard = true;
-            spin->setValue(d);
-            guard = false;
-            if(on_change) on_change(spin->value());
-        });
-        connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double d)
-        {
-            if(guard) return;
-            guard = true;
-            slider->setValue(ToSlider(d));
-            guard = false;
-            if(on_change) on_change(d);
-        });
-    }
-
-    void SetRange(double min, double max, int decimals)
-    {
-        lo = min;
-        hi = max;
-        guard = true;
-        spin->setDecimals(decimals);
-        spin->setRange(min, max);
-        spin->setSingleStep(std::pow(10.0, -decimals) * (decimals > 0 ? 5 : 1));
-        guard = false;
-    }
-
-    void SetValue(double d)
-    {
-        guard = true;
-        spin->setValue(d);
-        slider->setValue(ToSlider(d));
-        guard = false;
-    }
-
-    std::function<void(double)> on_change;
-
-private:
-    int ToSlider(double d) const
-    {
-        return (hi > lo) ? (int)std::lround((d - lo) / (hi - lo) * 1000.0) : 0;
-    }
-
-    QSlider*        slider;
-    QDoubleSpinBox* spin;
-    double          lo = 0, hi = 1;
-    bool            guard = false;
-};
 
 /*=========================================================*\
 | CanvasWidget                                              |
 \*=========================================================*/
-CanvasWidget::CanvasWidget(RenderEngine* engine_ptr, std::function<void()> save_cb, QWidget* parent)
-    : QWidget(parent), engine(engine_ptr), save_callback(std::move(save_cb))
+CanvasWidget::CanvasWidget(RenderEngine* engine_ptr, CanvasHooks hooks_in, QWidget* parent)
+    : QWidget(parent), engine(engine_ptr), hooks(std::move(hooks_in))
 {
     save_timer = new QTimer(this);
     save_timer->setSingleShot(true);
     save_timer->setInterval(800);
-    connect(save_timer, &QTimer::timeout, this, [this]() { if(save_callback) save_callback(); });
+    connect(save_timer, &QTimer::timeout, this, [this]() { if(hooks.save) hooks.save(); });
 
     canvas = new LayoutCanvas(engine, this);
 
@@ -134,9 +67,32 @@ CanvasWidget::CanvasWidget(RenderEngine* engine_ptr, std::function<void()> save_
     splitter->setStretchFactor(2, 0);
     splitter->setSizes({260, 700, 300});
 
-    QHBoxLayout* main = new QHBoxLayout(this);
+    main_area = splitter;
+
+    /*-----------------------------------------------------*\
+    | Standby banner (hidden unless another OpenRGB window  |
+    | is driving the lights)                                |
+    \*-----------------------------------------------------*/
+    standby_banner = new QFrame(this);
+    standby_banner->setObjectName("gc_standby_banner");
+    standby_banner->setStyleSheet("#gc_standby_banner { background: #5a4500; border: 1px solid #c99a00; border-radius: 4px; }"
+                                  "#gc_standby_banner QLabel { color: #ffe9a8; }");
+    QHBoxLayout* bl = new QHBoxLayout(standby_banner);
+    bl->setContentsMargins(10, 6, 6, 6);
+    QLabel* banner_text = new QLabel(tr("<b>Another OpenRGB window is controlling the lights</b> (it may be minimised to the "
+                                        "system tray). This window is only previewing, so the two don't fight and flicker."),
+                                     standby_banner);
+    banner_text->setWordWrap(true);
+    QPushButton* take = new QPushButton(tr("Control lights from this window"), standby_banner);
+    bl->addWidget(banner_text, 1);
+    bl->addWidget(take);
+    standby_banner->hide();
+    connect(take, &QPushButton::clicked, this, [this]() { if(hooks.take_control) hooks.take_control(); });
+
+    QVBoxLayout* main = new QVBoxLayout(this);
     main->setContentsMargins(4, 4, 4, 4);
-    main->addWidget(splitter);
+    main->addWidget(standby_banner);
+    main->addWidget(splitter, 1);
 
     connect(canvas, &LayoutCanvas::ZoneSelected, this, &CanvasWidget::OnCanvasZoneSelected);
     connect(canvas, &LayoutCanvas::ZoneEdited,   this, &CanvasWidget::OnCanvasZoneEdited);
@@ -336,6 +292,23 @@ QWidget* CanvasWidget::BuildToolbar()
     canvas_w_spin->setToolTip(tr("Canvas width"));
     canvas_h_spin->setToolTip(tr("Canvas height"));
 
+    QPushButton* calibrate = new QPushButton(tr("Calibrate colours…"), bar);
+    calibrate->setToolTip(tr("Match colours between devices that show the same value differently"));
+    connect(calibrate, &QPushButton::clicked, this, [this]()
+    {
+        if(!calibration_dialog)
+        {
+            calibration_dialog = new CalibrationDialog(engine, [this]()
+            {
+                canvas->RefreshFrame();
+                ScheduleSave();
+            }, this);
+        }
+        calibration_dialog->show();
+        calibration_dialog->raise();
+        calibration_dialog->activateWindow();
+    });
+
     QPushButton* fit = new QPushButton(tr("Fit"), bar);
     fit->setToolTip(tr("Fit canvas to view (Ctrl + wheel zooms)"));
 
@@ -343,6 +316,14 @@ QWidget* CanvasWidget::BuildToolbar()
     l->addWidget(output_check);
     l->addWidget(fps_spin);
     l->addWidget(fps_label);
+    l->addSpacing(12);
+    QCheckBox* preview_check = new QCheckBox(tr("Live preview"), bar);
+    preview_check->setChecked(true);
+    preview_check->setToolTip(tr("Animate the effect behind the map. Untick to save CPU - LED dots still update."));
+    connect(preview_check, &QCheckBox::toggled, this, [this](bool on) { canvas->SetLivePreview(on); });
+
+    l->addWidget(calibrate);
+    l->addWidget(preview_check);
     l->addSpacing(12);
     l->addWidget(led_edit_button);
     l->addWidget(snap_check);
@@ -407,6 +388,7 @@ QWidget* CanvasWidget::BuildEffectPanel()
     scroll->setWidgetResizable(true);
     scroll->setMinimumWidth(290);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     QWidget* panel = new QWidget(scroll);
     QVBoxLayout* l = new QVBoxLayout(panel);
@@ -547,6 +529,84 @@ QWidget* CanvasWidget::BuildEffectPanel()
     });
 
     l->addWidget(gg);
+
+    /*-----------------------------------------------------*\
+    | Profiles                                              |
+    \*-----------------------------------------------------*/
+    QGroupBox*   pg = new QGroupBox(tr("Profiles"), panel);
+    QVBoxLayout* pl = new QVBoxLayout(pg);
+
+    profile_combo = new QComboBox(pg);
+    profile_combo->setToolTip(tr("OpenRGB profiles"));
+
+    QPushButton* save_profile = new QPushButton(tr("Save to profile"), pg);
+    QPushButton* new_profile  = new QPushButton(tr("New…"), pg);
+    QPushButton* load_profile = new QPushButton(tr("Load"), pg);
+    save_profile->setToolTip(tr("Store the current effect, gradient and play state in this profile.\n"
+                                "The profile's device colours and other plugins are kept.\n"
+                                "The layout map is shared by all profiles."));
+
+    QHBoxLayout* pb = new QHBoxLayout();
+    pb->addWidget(load_profile);
+    pb->addWidget(save_profile);
+    pb->addWidget(new_profile);
+
+    status_label = new QLabel(pg);
+    status_label->setWordWrap(true);
+    status_label->setStyleSheet("color: gray;");
+
+    QLabel* phelp = new QLabel(tr("<small>Your setup is saved automatically. Profiles remember the effect, gradient and "
+                                  "whether it's playing. Loading a profile without Gradient Canvas settings pauses the "
+                                  "animation so the profile's own colours show.</small>"), pg);
+    phelp->setWordWrap(true);
+
+    pl->addWidget(profile_combo);
+    pl->addLayout(pb);
+    pl->addWidget(status_label);
+    pl->addWidget(phelp);
+
+    status_timer = new QTimer(this);
+    status_timer->setSingleShot(true);
+    status_timer->setInterval(8000);
+    connect(status_timer, &QTimer::timeout, status_label, &QLabel::clear);
+
+    auto do_save = [this](const std::string& name)
+    {
+        if(!hooks.save_to_profile) return;
+        if(hooks.save) hooks.save();
+        QString err = hooks.save_to_profile(name);
+        SetStatus(err.isEmpty() ? tr("Saved to “%1”.").arg(QString::fromStdString(name)) : err);
+        RefreshProfiles();
+    };
+
+    connect(save_profile, &QPushButton::clicked, this, [this, do_save]()
+    {
+        if(profile_combo->currentIndex() < 0 || profile_combo->currentText().isEmpty())
+        {
+            SetStatus(tr("No profiles yet - click New… to create one."));
+            return;
+        }
+        do_save(profile_combo->currentText().toStdString());
+    });
+    connect(new_profile, &QPushButton::clicked, this, [this, do_save]()
+    {
+        bool ok = false;
+        QString name = QInputDialog::getText(this, tr("New profile"), tr("Profile name:"), QLineEdit::Normal, QString(), &ok).trimmed();
+        if(ok && !name.isEmpty())
+        {
+            do_save(name.toStdString());
+            profile_combo->setCurrentText(name);
+        }
+    });
+    connect(load_profile, &QPushButton::clicked, this, [this]()
+    {
+        if(hooks.load_profile && !profile_combo->currentText().isEmpty())
+        {
+            hooks.load_profile(profile_combo->currentText().toStdString());
+        }
+    });
+
+    l->addWidget(pg);
     l->addStretch(1);
 
     scroll->setWidget(panel);
@@ -579,6 +639,7 @@ void CanvasWidget::ReloadAll()
     updating_ui = false;
 
     RefreshDeviceTree();
+    RefreshProfiles();
     canvas->Rebuild();
     RefreshEffectControls();
     gradient_editor->update();
@@ -588,6 +649,57 @@ void CanvasWidget::ReloadAll()
         current_zone = -1;
     }
     RefreshZoneProperties();
+
+    if(calibration_dialog)
+    {
+        calibration_dialog->Reload();
+    }
+}
+
+void CanvasWidget::RefreshProfiles()
+{
+    if(!hooks.list_profiles)
+    {
+        return;
+    }
+
+    QString current = profile_combo->currentText();
+    profile_combo->blockSignals(true);
+    profile_combo->clear();
+    for(const std::string& name : hooks.list_profiles())
+    {
+        profile_combo->addItem(QString::fromStdString(name));
+    }
+    int idx = profile_combo->findText(current);
+    if(idx >= 0)
+    {
+        profile_combo->setCurrentIndex(idx);
+    }
+    profile_combo->blockSignals(false);
+}
+
+void CanvasWidget::SetStandby(bool standby)
+{
+    const bool was_standby = standby_banner->isVisibleTo(this);
+
+    standby_banner->setVisible(standby);
+    main_area->setEnabled(!standby);
+
+    if(standby && calibration_dialog)
+    {
+        calibration_dialog->hide();
+    }
+    if(!standby && was_standby)
+    {
+        ReloadAll();
+        SetStatus(tr("This window is now controlling the lights."));
+    }
+}
+
+void CanvasWidget::SetStatus(const QString& text)
+{
+    status_label->setText(text);
+    status_timer->start();
 }
 
 void CanvasWidget::RefreshDeviceTree()
@@ -873,18 +985,35 @@ void CanvasWidget::OnEffectChanged(int index)
 
 void CanvasWidget::OnFrame()
 {
-    canvas->RefreshFrame();
+    /*-----------------------------------------------------*\
+    | Don't spend time repainting the map while the tab is  |
+    | hidden or OpenRGB is minimised to the tray            |
+    \*-----------------------------------------------------*/
+    if(canvas->isVisible())
+    {
+        canvas->RefreshFrame();
+    }
 
     /*-----------------------------------------------------*\
-    | Measured frame rate                                   |
+    | Measured frame rate + device write time               |
     \*-----------------------------------------------------*/
     qint64 now = QDateTime::currentMSecsSinceEpoch();
     frame_counter++;
     if(now - fps_window_start >= 1000)
     {
-        fps_label->setText(engine->IsPlaying()
-                           ? QString("%1 fps").arg(frame_counter * 1000.0 / std::max<qint64>(1, now - fps_window_start), 0, 'f', 0)
-                           : QString());
+        if(engine->IsPlaying() && fps_label->isVisible())
+        {
+            double       measured = frame_counter * 1000.0 / std::max<qint64>(1, now - fps_window_start);
+            double       write_ms = engine->LastOutputMs();
+            unsigned int dropped  = engine->DroppedFrames();
+            fps_label->setText(QString("%1 fps").arg(measured, 0, 'f', 0));
+            fps_label->setToolTip(tr("Last device write: %1 ms\nFrames skipped because hardware was busy: %2")
+                                  .arg(write_ms, 0, 'f', 1).arg(dropped));
+        }
+        else
+        {
+            fps_label->setText(QString());
+        }
         frame_counter    = 0;
         fps_window_start = now;
     }
