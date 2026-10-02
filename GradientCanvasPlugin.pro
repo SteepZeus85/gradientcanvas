@@ -18,7 +18,7 @@ TARGET       = GradientCanvasPlugin
 #-----------------------------------------------------------------------------------------------#
 GIT_COMMIT = $$system(git -C $$PWD rev-parse --short HEAD 2> $$QMAKE_SYSTEM_NULL_DEVICE)
 isEmpty(GIT_COMMIT): GIT_COMMIT = local
-DEFINES += GRADIENT_CANVAS_VERSION=\\\"1.2.0\\\" GRADIENT_CANVAS_COMMIT=\\\"$$GIT_COMMIT\\\"
+DEFINES += GRADIENT_CANVAS_VERSION=\\\"1.2.1\\\" GRADIENT_CANVAS_COMMIT=\\\"$$GIT_COMMIT\\\"
 
 #-----------------------------------------------------------------------------------------------#
 # OpenRGB headers (header-only use - the plugin talks to OpenRGB through pure virtual APIs)     #
