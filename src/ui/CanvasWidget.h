@@ -25,6 +25,7 @@ struct CanvasHooks
     std::function<std::vector<std::string>()>           list_profiles;
     std::function<QString(const std::string&)>          save_to_profile;    /* returns error or "" */
     std::function<void(const std::string&)>             load_profile;
+    std::function<void()>                               take_control;       /* make this window drive the lights */
 };
 
 class QCheckBox;
@@ -56,6 +57,12 @@ public:
     void    ReloadAll();
     void    RefreshProfiles();
     void    SetStatus(const QString& text);
+
+    /*-----------------------------------------------------*\
+    | Another OpenRGB window is driving the lights: show a  |
+    | banner and lock the editors (preview keeps running)   |
+    \*-----------------------------------------------------*/
+    void    SetStandby(bool standby);
 
 private slots:
     void    OnTreeItemChanged(QTreeWidgetItem* item, int column);
@@ -109,6 +116,8 @@ private:
 
     /* canvas */
     LayoutCanvas*           canvas;
+    QWidget*                main_area;
+    QWidget*                standby_banner;
 
     /* effect */
     QComboBox*              effect_combo;

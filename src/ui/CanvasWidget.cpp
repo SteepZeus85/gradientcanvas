@@ -16,6 +16,7 @@
 #include <QDateTime>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -66,9 +67,32 @@ CanvasWidget::CanvasWidget(RenderEngine* engine_ptr, CanvasHooks hooks_in, QWidg
     splitter->setStretchFactor(2, 0);
     splitter->setSizes({260, 700, 300});
 
-    QHBoxLayout* main = new QHBoxLayout(this);
+    main_area = splitter;
+
+    /*-----------------------------------------------------*\
+    | Standby banner (hidden unless another OpenRGB window  |
+    | is driving the lights)                                |
+    \*-----------------------------------------------------*/
+    standby_banner = new QFrame(this);
+    standby_banner->setObjectName("gc_standby_banner");
+    standby_banner->setStyleSheet("#gc_standby_banner { background: #5a4500; border: 1px solid #c99a00; border-radius: 4px; }"
+                                  "#gc_standby_banner QLabel { color: #ffe9a8; }");
+    QHBoxLayout* bl = new QHBoxLayout(standby_banner);
+    bl->setContentsMargins(10, 6, 6, 6);
+    QLabel* banner_text = new QLabel(tr("<b>Another OpenRGB window is controlling the lights</b> (it may be minimised to the "
+                                        "system tray). This window is only previewing, so the two don't fight and flicker."),
+                                     standby_banner);
+    banner_text->setWordWrap(true);
+    QPushButton* take = new QPushButton(tr("Control lights from this window"), standby_banner);
+    bl->addWidget(banner_text, 1);
+    bl->addWidget(take);
+    standby_banner->hide();
+    connect(take, &QPushButton::clicked, this, [this]() { if(hooks.take_control) hooks.take_control(); });
+
+    QVBoxLayout* main = new QVBoxLayout(this);
     main->setContentsMargins(4, 4, 4, 4);
-    main->addWidget(splitter);
+    main->addWidget(standby_banner);
+    main->addWidget(splitter, 1);
 
     connect(canvas, &LayoutCanvas::ZoneSelected, this, &CanvasWidget::OnCanvasZoneSelected);
     connect(canvas, &LayoutCanvas::ZoneEdited,   this, &CanvasWidget::OnCanvasZoneEdited);
@@ -652,6 +676,24 @@ void CanvasWidget::RefreshProfiles()
         profile_combo->setCurrentIndex(idx);
     }
     profile_combo->blockSignals(false);
+}
+
+void CanvasWidget::SetStandby(bool standby)
+{
+    const bool was_standby = standby_banner->isVisibleTo(this);
+
+    standby_banner->setVisible(standby);
+    main_area->setEnabled(!standby);
+
+    if(standby && calibration_dialog)
+    {
+        calibration_dialog->hide();
+    }
+    if(!standby && was_standby)
+    {
+        ReloadAll();
+        SetStatus(tr("This window is now controlling the lights."));
+    }
 }
 
 void CanvasWidget::SetStatus(const QString& text)
