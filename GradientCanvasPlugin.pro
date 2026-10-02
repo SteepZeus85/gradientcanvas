@@ -18,7 +18,7 @@ TARGET       = GradientCanvasPlugin
 #-----------------------------------------------------------------------------------------------#
 GIT_COMMIT = $$system(git -C $$PWD rev-parse --short HEAD 2> $$QMAKE_SYSTEM_NULL_DEVICE)
 isEmpty(GIT_COMMIT): GIT_COMMIT = local
-DEFINES += GRADIENT_CANVAS_VERSION=\\\"1.2.1\\\" GRADIENT_CANVAS_COMMIT=\\\"$$GIT_COMMIT\\\"
+DEFINES += GRADIENT_CANVAS_VERSION=\\\"1.2.2\\\" GRADIENT_CANVAS_COMMIT=\\\"$$GIT_COMMIT\\\"
 
 #-----------------------------------------------------------------------------------------------#
 # OpenRGB headers (header-only use - the plugin talks to OpenRGB through pure virtual APIs)     #
@@ -47,6 +47,7 @@ HEADERS +=                                                                      
     src/Effects.h                                                                               \
     src/LayoutModel.h                                                                           \
     src/RenderEngine.h                                                                          \
+    src/InstanceGuard.h                                                                         \
     src/ui/CanvasWidget.h                                                                       \
     src/ui/GradientEditor.h                                                                     \
     src/ui/LayoutCanvas.h                                                                       \
@@ -61,6 +62,7 @@ SOURCES +=                                                                      
     src/Effects.cpp                                                                             \
     src/LayoutModel.cpp                                                                         \
     src/RenderEngine.cpp                                                                        \
+    src/InstanceGuard.cpp                                                                       \
     src/ui/CanvasWidget.cpp                                                                     \
     src/ui/GradientEditor.cpp                                                                   \
     src/ui/LayoutCanvas.cpp                                                                     \

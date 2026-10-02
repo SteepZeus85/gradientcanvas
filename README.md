@@ -11,7 +11,7 @@ Place your keyboard, fans, strips, RAM and GPU on a map where they physically si
 ![Plugin API v5](https://img.shields.io/badge/plugin%20API-v5-blue)
 ![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-green)
 
-![Gradient Canvas running a spiral effect across fans, RAM, GPU, keyboard and a case strip](docs/screenshot.webp)
+![Gradient Canvas in OpenRGB 1.0: a sunset gradient sweeping across two fans, RAM sticks, an ARGB strip and a keyboard](docs/screenshot.webp)
 
 </div>
 
@@ -54,6 +54,8 @@ Different hardware often shows the same colour differently: a "white" that's blu
 
 The on-screen preview always shows the colour you intended. Only what's sent to the hardware is corrected.
 
+<p align="center"><img src="docs/calibration.webp" width="560" alt="The colour calibration window"></p>
+
 ### 💾 Profiles & saving
 - Everything **saves automatically**, including whether the animation was playing.
 - Works with **OpenRGB profiles**: each profile can store its own effect and gradient. The layout map and calibration are shared across profiles, because they describe your hardware.
@@ -61,6 +63,9 @@ The on-screen preview always shows the colour you intended. Only what's sent to 
 
 ### ⚡ Smooth with slow hardware
 Colours are sent to devices from a background thread, so slow RAM or motherboard controllers never freeze OpenRGB's window. Each device updates as fast as it can, and fast devices aren't held back by slow ones.
+
+### 🪟 One window in charge
+OpenRGB can end up running twice, for example a copy minimised to the tray at login plus one you open later. Gradient Canvas makes sure only **one** of them drives the lights, so they never fight and flicker. The window you opened last takes control. Any other copy shows a banner and only previews, and it takes over automatically if the active window closes.
 
 ---
 
@@ -111,6 +116,20 @@ Colours are sent to devices from a background thread, so slow RAM or motherboard
 </details>
 
 <details>
+<summary><b>The lights flicker or jump between two different looks</b></summary>
+
+This usually means two things are sending colours at once:
+- **Two OpenRGB windows.** With *Start at login* and *Minimize on close* turned on, a hidden copy can keep running in the tray. Since v1.2.2 Gradient Canvas handles this itself: only one window drives the lights, and the others show a yellow banner. Use **Control lights from this window** to switch which one is in charge.
+- **Another effects plugin**, such as OpenRGB Effects, running on the same devices. Stop its effect or untick those devices there.
+</details>
+
+<details>
+<summary><b>"This profile is stored by the OpenRGB service…"</b></summary>
+
+OpenRGB 1.0 usually runs a background service that keeps your profiles. A plugin can't safely update an existing service profile without wiping its saved device colours, so **Save to profile** won't overwrite it. Instead, load the profile and click OpenRGB's own **Save Profile** button (it includes Gradient Canvas whenever the profile already has it), or use **New…** to create a fresh profile.
+</details>
+
+<details>
 <summary><b>Colours look different on each device</b></summary>
 
 Use **Calibrate colours…** in the toolbar. The window explains step by step how to match devices.
@@ -157,6 +176,7 @@ If your OpenRGB isn't the latest, check out the matching commit inside the `Open
 ```
 src/
   GradientCanvasPlugin.*    plugin entry point, settings file, profiles, device lifecycle
+  InstanceGuard.*           makes sure only one OpenRGB window drives the lights
   RenderEngine.*            frame timer + background output thread
   Effects.*                 effect maths
   Gradient.*                OKLab gradient + presets
